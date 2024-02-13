@@ -1,6 +1,4 @@
-from dash import Dash, dcc, html, dash_table, Input, Output
-from dash import State, callback, ctx, Patch, no_update, MATCH
-from dash.exceptions import PreventUpdate
+from dash import Dash, dcc, html
 import dash_bootstrap_components as dbc
 
 
@@ -24,8 +22,8 @@ app.layout = html.Div([
     dcc.Upload(
         id='upload-data',
         children=html.Div([
-            'Drag and Drop or ',
-            html.A('Select Files')
+            '拖拽或 ',
+            html.A('选择文件(*.hdf5 *.h5)')
         ]),
         style={
             'width': '100%',

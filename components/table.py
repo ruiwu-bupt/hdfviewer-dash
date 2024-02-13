@@ -1,5 +1,4 @@
 import base64
-import json
 
 import pandas as pd
 import dash_bootstrap_components as dbc
@@ -17,7 +16,7 @@ tables_navigation = [
 ]
 
 tables_tab = dbc.Tab(
-    label='tables',
+    label='数据表',
     tab_id='tables',
     children=[
         dbc.Container([

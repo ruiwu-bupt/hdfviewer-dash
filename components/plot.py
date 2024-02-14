@@ -3,10 +3,13 @@ from operator import methodcaller
 
 import dash_bootstrap_components as dbc
 from dash import dcc, html, Input, Output
-from dash import State, callback, ctx, Patch, MATCH, ALL
+from dash import State, callback, ctx, Patch
 from dash.exceptions import PreventUpdate
 import plotly.graph_objects as go
 import pandas as pd
+
+from components.filter import filter_boxes_match, filter_modal, filter_configs_match
+from utils.common import *
 
 
 def input_box(info, component):
@@ -16,7 +19,7 @@ def input_box(info, component):
     ])
 
 
-def input_page(title, opts=[]):
+def input_page(title, cols=[]):
     cid = str(uuid.uuid1())
     return dbc.Card(
         [
@@ -30,7 +33,7 @@ def input_page(title, opts=[]):
                 "数据集",
                 dcc.Dropdown(
                     id={"type": 'dataset', "index": cid},
-                    options=opts,
+                    options=cols,
                     clearable=False),
             ),
             input_box(
@@ -45,11 +48,11 @@ def input_page(title, opts=[]):
                     value='lines'),
             ),
             input_box("X轴", dcc.Dropdown(
-                id={"type": 'x-axis', "index": cid}, options=opts, clearable=False)),
+                id={"type": 'x-axis', "index": cid}, options=cols, clearable=False)),
             input_box("Y轴", dcc.Dropdown(
-                id={"type": 'y-axis', "index": cid}, options=opts, clearable=False)),
+                id={"type": 'y-axis', "index": cid}, options=cols, clearable=False)),
             input_box("分组", dcc.Dropdown(
-                id={"type": 'groupby', "index": cid}, options=opts)),
+                id={"type": 'groupby', "index": cid}, options=cols)),
             input_box("聚合类型", dcc.Dropdown(
                 id={"type": 'agg_type', "index": cid}, options=[
                     {"label": "最大值", "value": "max"},
@@ -62,15 +65,17 @@ def input_page(title, opts=[]):
                     # {"label": "最大值-最小值", "value": "max-min"},
                 ])),
             input_box("聚合列", dcc.Dropdown(
-                id={"type": 'agg_col', "index": cid}, options=opts)),
+                id={"type": 'agg_col', "index": cid}, options=cols)),
             html.Span([
+                # BUG: 睿智问题，id的type没写对
                 dbc.Button("增加筛选条件", color="light", className="me-1",
-                           id={"type": 'filter-modal', "index": cid}),
-                dbc.Label("当前共0个筛选条件"),
+                           id={"type": 'show_filter_button', "index": cid}),
+                dbc.Label("当前共0个筛选条件", id={"type": 'filter_cnt', "index": cid}),
             ]),
+            filter_modal(cid, cols),
             html.Span([
                 dbc.Button("增加计算列", color="light", className="me-1",
-                           id={"type": 'compute-modal', "index": cid}),
+                           id={"type": 'show-compute-button', "index": cid}),
                 dbc.Label("当前共0个计算列"),
             ]),
 
@@ -116,54 +121,31 @@ plot_tab = dbc.Tab(
 )
 
 
-def o_match(tp):
-    return {"type": tp, "index": MATCH}
-
-
-def o_all(tp):
-    return {"type": tp, "index": ALL}
-
-
-x_axis_match = o_match('x-axis')
-y_axis_match = o_match('y-axis')
-dataset_match = o_match('dataset')
-figure_type_match = o_match('figure-type')
-groupby_match = o_match('groupby')
-agg_type_match = o_match('agg_type')
-agg_col_match = o_match('agg_col')
-page_delete_match = o_match('page-delete')
-input_page_match = o_match('input-page')
-plot_configs_match = o_match('plot-configs')
-
-x_axis_all = o_all('x-axis')
-y_axis_all = o_all('y-axis')
-dataset_all = o_all('dataset')
-figure_type_all = o_all('figure-type')
-groupby_all = o_all('groupby')
-agg_type_all = o_all('agg_type')
-agg_col_all = o_all('agg_col')
-page_delete_all = o_all('page-delete')
-plot_configs_all = o_all('plot-configs')
-
-
 @callback(
+    Output(filter_boxes_match, "children"),
     Output(x_axis_match, "options"),
     Output(y_axis_match, "options"),
     Output(groupby_match, "options"),
     Output(agg_col_match, "options"),
     Input(dataset_match, "value"),
     State("df_records", "data"),
+    State(filter_boxes_match, "children"),
     prevent_initial_call=True
 )
-def update_plot_configs(value, data):
+def update_available_cols(value, data, filter_col_boxes):
     if not data or not data[value]:
         raise PreventUpdate
+    patch = Patch()
     columns = list(data[value][0].keys())
-    return columns, columns, columns, columns
+    for i in range(len(filter_col_boxes)):
+        # TODO: 這裡硬編碼太惡心了
+        # TODO: 状态更新在不同的output模块，需要拆开写callback吗？
+        patch[i]['props']['children'][0]['props']['options'] = columns
+    return patch, columns, columns, columns, columns
 
 
 @callback(
-    Output(plot_configs_match, "data"),
+    Output(plot_configs_match, "data", allow_duplicate=True),
     Input(dataset_match, "value"),
     Input(figure_type_match, "value"),
     Input(x_axis_match, "value"),
@@ -250,10 +232,17 @@ def update_multi_figures(plot_configs, title, x_label, y_label, df_records):
         display = plot_config.get("display", None)
         agg_type = plot_config.get("agg_type", None)
         agg_col = plot_config.get("agg_col", None)
-        if display == "None" or not dataset or \
-                (not (x_axis and y_axis) and not (agg_type and groupby and agg_col)):
+        filters = plot_config.get('filter', [])
+        if display == "None" or not dataset:
+            continue
+        # TODO: 这里的逻辑优化下
+        if not (x_axis and y_axis) and not (agg_type and groupby and agg_col):
             continue
         df = pd.DataFrame.from_records(df_records[dataset])
+        if filters:
+            query = ' & '.join(f'{filter_col_name} {filter_col_op} {filter_col_val}' \
+                for filter_col_name, filter_col_op, filter_col_val in filters)
+            df = df.query(query)
         if not groupby:
             name = f'{dataset}-{x_axis}-{y_axis}'
             fig.add_trace(

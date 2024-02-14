@@ -2,13 +2,27 @@ import base64
 
 import pandas as pd
 import dash_bootstrap_components as dbc
-from dash import Dash, dcc, html, dash_table, Input, Output
-from dash import State, callback, ctx, Patch, no_update, MATCH
+from dash import html, dash_table, Input, Output
+from dash import State, callback, no_update
 from dash.exceptions import PreventUpdate
 import feffery_antd_components as fac
 
 from components.plot import dataset_all
 
+
+class H5FileTypeException(Exception):
+    pass
+
+
+h5_warning_modal = dbc.Modal(
+    [
+        dbc.ModalHeader(dbc.ModalTitle("不支持的文件格式")),
+        dbc.ModalBody("请上传HDF5文件(*.hdf5或*.h5)"),
+    ],
+    id="h5_warning_modal",
+    centered=True,
+    is_open=False,
+)
 
 tables_navigation = [
     html.Div(id='output-tree'),
@@ -21,17 +35,17 @@ tables_tab = dbc.Tab(
     children=[
         dbc.Container([
             # dcc.Loading(
-                dbc.Row([
+            dbc.Row([
                     dbc.Col(tables_navigation,
-                        width=4,
+                            width=4,
                             ),
                     dbc.Col([
                         html.Div(id='output-tables'),
 
                     ], width=8
                     )
-                ]
-                )
+                    ]
+                    )
             # ),
 
         ]),
@@ -40,14 +54,13 @@ tables_tab = dbc.Tab(
     active_label_style={"color": "blue"},
 )
 
+
 def parse_contents(contents, filename: str, date):
     _, content_string = contents.split(',')
 
     decoded = base64.b64decode(content_string)
     if not filename.endswith('.h5') and not filename.endswith('.hdf5'):
-        return html.Div([
-            'invalid file, must be h5 or hdf5'
-        ])
+        raise H5FileTypeException
     with open(filename, 'wb') as f:
         f.write(decoded)
     hdf = pd.HDFStore(filename)
@@ -55,7 +68,7 @@ def parse_contents(contents, filename: str, date):
     attrs = {}
     for key in keys:
         attrs[key] = repr(hdf.get_storer(key).attrs)
-    return keys, attrs, tree_data, {key: hdf[key].to_dict('records') for key in keys}
+    return attrs, tree_data, {key: hdf[key].to_dict('records') for key in keys}
 
 
 def parse_ant_tree(keys: list[str]):
@@ -117,6 +130,7 @@ def parse_ant_tree(keys: list[str]):
 
 @callback(
     [
+        Output('h5_warning_modal', 'is_open'),
         Output('attrs', 'data'),
         Output('df_records', 'data'),
         Output('output-tree', 'children'),
@@ -125,17 +139,21 @@ def parse_ant_tree(keys: list[str]):
     ],
     [
         State('input-pages', 'children'),
-        Input('upload-data', 'contents'),
-        State('upload-data', 'filename'),
-        State('upload-data', 'last_modified')
+        Input('upload_data', 'contents'),
+        State('upload_data', 'filename'),
+        State('upload_data', 'last_modified')
     ],
     prevent_initial_call=True
 )
-def update_output(input_pages, list_of_contents, list_of_names, list_of_dates):
-    if list_of_contents is not None:
-        keys, attrs, tree, tables = parse_contents(
-            list_of_contents[0], list_of_names[0], list_of_dates[0])
-        return attrs, tables, \
+def update_output(input_pages, file_content, file_name, file_ts):
+    if file_content is not None:
+        try:
+            attrs, tree, tables = parse_contents(
+                file_content, file_name, file_ts)
+        except H5FileTypeException:
+            return True, no_update, no_update, no_update, no_update, [no_update]*len(input_pages)
+        keys = list(attrs.keys())
+        return False, attrs, tables, \
             fac.AntdTree(id={"type": "tree", "index": 0},
                          treeData=tree, defaultExpandAll=True), \
             dbc.Tabs(
@@ -155,5 +173,5 @@ def update_output(input_pages, list_of_contents, list_of_names, list_of_dates):
                     for key in keys
                 ],
             ), \
-            [list(attrs.keys()) for _ in range(len(input_pages))]
-    return {}, {}, html.Div(), html.Div(), []
+            [keys for _ in range(len(input_pages))]
+    raise PreventUpdate

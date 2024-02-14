@@ -2,7 +2,7 @@ from dash import Dash, dcc, html
 import dash_bootstrap_components as dbc
 
 
-from components.table import tables_tab
+from components.table import tables_tab, h5_warning_modal
 from components.plot import plot_tab
 
 
@@ -20,7 +20,7 @@ main_tabs = dbc.Tabs(
 
 app.layout = html.Div([
     dcc.Upload(
-        id='upload-data',
+        id='upload_data',
         children=html.Div([
             '拖拽或 ',
             html.A('选择文件(*.hdf5 *.h5)')
@@ -35,11 +35,10 @@ app.layout = html.Div([
             'textAlign': 'center',
             'margin': '10px'
         },
-        # Allow multiple files to be uploaded
-        multiple=True
     ),
     dcc.Store(id="attrs", data={}),
     dcc.Store(id="df_records"),
+    h5_warning_modal,
     html.Div([main_tabs])
 
 ])

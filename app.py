@@ -6,12 +6,12 @@ from components.table import tables_tab, h5_warning_modal
 from components.plot import plot_tab
 
 
-app = Dash(__name__, title="hdfplotter",
+app = Dash(__name__, title='hdfplotter',
            external_stylesheets=[dbc.themes.BOOTSTRAP])
 
 main_tabs = dbc.Tabs(
-    id="main-tabs",
-    key="main-tabs",
+    id='main-tabs',
+    key='main-tabs',
     children=[
         tables_tab,
         plot_tab,
@@ -36,8 +36,8 @@ app.layout = html.Div([
             'margin': '10px'
         },
     ),
-    dcc.Store(id="attrs", data={}),
-    dcc.Store(id="df_records"),
+    dcc.Store(id='attrs', data={}),
+    dcc.Store(id='df_records'),
     h5_warning_modal,
     html.Div([main_tabs])
 
